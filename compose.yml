@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:18
+    container_name: postgres-pf-projsoft-local
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pfprojsoftdb
+      POSTGRES_USER: usuario
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Defina DB_PASSWORD no ambiente}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U usuario -d pfprojsoftdb"]
+      interval: 3s
+      timeout: 5s
+      retries: 15
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - pf-projsoft-postgres-local:/var/lib/postgresql
+volumes:
+  pf-projsoft-postgres-local:

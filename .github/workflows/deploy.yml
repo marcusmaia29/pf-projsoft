@@ -1,0 +1,140 @@
+name: Build and deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pf-projsoft-deploy
+  cancel-in-progress: false
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+  deploy:
+    needs: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: pfprojsoftdb
+          POSTGRES_USER: usuario
+          POSTGRES_PASSWORD: ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U usuario -d pfprojsoftdb"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 25 Temurin
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Build and test with Maven
+        env:
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          DB_NAME: pfprojsoftdb
+          DB_USER: usuario
+          DB_PASSWORD: ci_password
+        run: |
+          chmod +x mvnw
+          ./mvnw -B verify
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/pf-projsoft:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/pf-projsoft:latest
+
+      - name: Deploy and verify on AWS
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/pf-projsoft:${{ github.sha }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          AUTH0_ISSUER_URI: ${{ vars.AUTH0_ISSUER_URI }}
+          AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE }}
+          APP_ALLOWED_ORIGINS: ${{ vars.APP_ALLOWED_ORIGINS }}
+        with:
+          host: ${{ secrets.HOST_TEST }}
+          username: ubuntu
+          key: ${{ secrets.KEY_TEST }}
+          fingerprint: ${{ secrets.HOST_FINGERPRINT }}
+          envs: IMAGE,DB_PASSWORD,AUTH0_ISSUER_URI,AUTH0_AUDIENCE,APP_ALLOWED_ORIGINS
+          command_timeout: 10m
+          script: |
+            set -eu
+            docker network inspect pf-projsoft-rede >/dev/null
+            docker inspect postgres-pf-projsoft >/dev/null
+            docker exec postgres-pf-projsoft pg_isready -U usuario -d pfprojsoftdb
+            docker pull "$IMAGE"
+
+            # Only the application container of this project is replaced.
+            if docker container inspect pf-projsoft >/dev/null 2>&1; then
+              docker stop pf-projsoft
+              docker rm pf-projsoft
+            fi
+
+            docker run -d --name pf-projsoft \
+              --restart unless-stopped \
+              --network pf-projsoft-rede \
+              -p 8080:8085 \
+              -e DB_HOST=postgres-pf-projsoft \
+              -e DB_PORT=5432 \
+              -e DB_NAME=pfprojsoftdb \
+              -e DB_USER=usuario \
+              -e DB_PASSWORD \
+              -e AUTH0_ISSUER_URI \
+              -e AUTH0_AUDIENCE \
+              -e APP_ALLOWED_ORIGINS \
+              "$IMAGE"
+
+            for attempt in $(seq 1 40); do
+              if curl --fail --silent http://127.0.0.1:8080/actuator/health; then
+                printf '\nApplication and database are healthy.\n'
+                exit 0
+              fi
+              sleep 3
+            done
+            docker inspect pf-projsoft --format '{{.State.Status}} (exit={{.State.ExitCode}})'
+            echo 'Application health check failed.' >&2
+            exit 1

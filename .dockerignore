@@ -1,0 +1,11 @@
+.git
+.idea
+*.iml
+**/*.pem
+.env*
+target/*
+!target/*.jar
+frontend/node_modules
+frontend/dist
+frontend/.vercel
+**/.env.local
