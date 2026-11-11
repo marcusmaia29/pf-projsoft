@@ -27,13 +27,12 @@ public class ArtigoController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ArtigoResponse criar(@Valid @RequestBody ArtigoRequest request,
-                                @AuthenticationPrincipal Jwt jwt) {
-        return service.criar(request, jwt.getClaimAsString(WebSecurityConfig.EMAIL_CLAIM));
+    public Artigo criar(@Valid @RequestBody Artigo artigo, @AuthenticationPrincipal Jwt jwt) {
+        return service.criar(artigo, jwt.getClaimAsString(WebSecurityConfig.EMAIL_CLAIM));
     }
 
     @GetMapping
-    public List<ArtigoResponse> listar() {
+    public List<Artigo> listar() {
         return service.listar();
     }
 
