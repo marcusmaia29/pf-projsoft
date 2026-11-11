@@ -10,10 +10,17 @@ try {
         throw "Saúde da API falhou: HTTP $([int]$health.StatusCode)"
     }
     Write-Host 'OK: aplicação e banco saudáveis.' -ForegroundColor Green
-    foreach ($route in @('/base/status', '/base/admin')) {
-        $response = $client.GetAsync("$BaseUrl$route").GetAwaiter().GetResult()
-        if ([int]$response.StatusCode -ne 401) { throw "$route deveria retornar 401 sem token; retornou $([int]$response.StatusCode)." }
-        Write-Host "OK: $route protegido (401 sem token)." -ForegroundColor Green
+    $requests = @(
+        @{ Method = [System.Net.Http.HttpMethod]::Get; Route = '/artigos' },
+        @{ Method = [System.Net.Http.HttpMethod]::Post; Route = '/artigos' },
+        @{ Method = [System.Net.Http.HttpMethod]::Delete; Route = '/artigos/1' }
+    )
+    foreach ($item in $requests) {
+        $message = [System.Net.Http.HttpRequestMessage]::new($item.Method, "$BaseUrl$($item.Route)")
+        $response = $client.SendAsync($message).GetAwaiter().GetResult()
+        $label = "$($item.Method) $($item.Route)"
+        if ([int]$response.StatusCode -ne 401) { throw "$label deveria retornar 401 sem token; retornou $([int]$response.StatusCode)." }
+        Write-Host "OK: $label protegido (401 sem token)." -ForegroundColor Green
     }
-    Write-Host 'Próximo: testar os dois botões do frontend após login USER e ADMIN.'
+    Write-Host 'Próximo: testar listar, criar e deletar artigos no frontend após login USER e ADMIN.'
 } finally { $client.Dispose() }

@@ -32,11 +32,24 @@ O proxy de desenvolvimento está em `frontend/vite.config.js`. O destino publica
 
 O backend usa `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `AUTH0_ISSUER_URI`, `AUTH0_AUDIENCE`, `APP_ALLOWED_ORIGINS` e `PORT`. Configuração: `src/main/resources/application.properties`. Não versionar credenciais.
 
-## Verificação
+## API
 
-- `GET /actuator/health`: público, confirma aplicação e banco.
-- `GET /base/status`: requer access token válido.
-- `GET /base/admin`: requer role ADMIN.
+Base de conhecimentos da empresa. Todas as rotas de artigos exigem access token do Auth0.
+
+| Rota | Permissão | Descrição |
+| --- | --- | --- |
+| `GET /artigos` | autenticado | Lista todos os artigos. |
+| `POST /artigos` | role ADMIN | Cria um artigo com `titulo`, `descricao` e `prioridade`. O e-mail do criador vem do token. Retorna 201. |
+| `DELETE /artigos/{id}` | role ADMIN | Deleta um artigo. Retorna 204, ou 404 se não existir. |
+| `GET /actuator/health` | público | Confirma aplicação e banco. |
+
+Exemplo de corpo do `POST /artigos`:
+
+```json
+{ "titulo": "Como abrir um chamado", "descricao": "Passo a passo do suporte.", "prioridade": "Alta" }
+```
+
+Resposta: `id`, `titulo`, `descricao`, `prioridade` e `emailCriador`. Dados inválidos retornam 400.
 
 Execute `scripts/validar.ps1` para verificar saúde e bloqueio de acesso anônimo.
 

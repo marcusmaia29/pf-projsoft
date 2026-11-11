@@ -38,8 +38,9 @@ public class WebSecurityConfig {
                 .authorizeHttpRequests(requests -> requests
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/base/status").authenticated()
-                        .requestMatchers(HttpMethod.GET, "/base/admin").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/artigos").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/artigos").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/artigos/*").hasRole("ADMIN")
                         .anyRequest().denyAll())
                 .oauth2ResourceServer(resourceServer -> resourceServer
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(authentication)))
