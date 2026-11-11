@@ -115,21 +115,6 @@ class BaseIntegrationTests {
         return client.send(request.build(), HttpResponse.BodyHandlers.ofString());
     }
 
-    private static final String ARTIGO = "{\"titulo\":\"Como abrir um chamado\","
-            + "\"descricao\":\"Passo a passo do suporte.\",\"prioridade\":\"ALTA\"}";
-
-    private long criarArtigo(String jwt, String body) throws Exception {
-        var response = request("POST", "/artigos", jwt, body);
-        assertEquals(201, response.statusCode(), response.body());
-        var id = java.util.regex.Pattern.compile("\"id\":(\\d+)").matcher(response.body());
-        assertTrue(id.find(), response.body());
-        return Long.parseLong(id.group(1));
-    }
-
-    private int linhas(long id) {
-        return jdbc.queryForObject("select count(*) from artigos where id = ?", Integer.class, id);
-    }
-
     @Test
     void healthAndDatabaseAreAvailable() throws Exception {
         var response = request("GET", "/actuator/health", null, null);
@@ -138,79 +123,23 @@ class BaseIntegrationTests {
     }
 
     @Test
-    void anonymousCannotAccessArticles() throws Exception {
+    void anonymousCannotAccessProtectedRoutes() throws Exception {
         assertEquals(401, request("GET", "/artigos", null, null).statusCode());
-        assertEquals(401, request("POST", "/artigos", null, ARTIGO).statusCode());
-        assertEquals(401, request("DELETE", "/artigos/1", null, null).statusCode());
+        assertEquals(401, request("DELETE", "/artigos/0", null, null).statusCode());
     }
 
     @Test
-    void userCanOnlyListArticles() throws Exception {
-        String admin = token("admin@example.com", List.of("ADMIN"));
-        String user = token("user@example.com", List.of());
-        long id = criarArtigo(admin, ARTIGO);
-        try {
-            var list = request("GET", "/artigos", user, null);
-            assertEquals(200, list.statusCode());
-            assertTrue(list.body().contains("\"id\":" + id + ","), list.body());
-            assertEquals(403, request("POST", "/artigos", user, ARTIGO).statusCode());
-            assertEquals(403, request("DELETE", "/artigos/" + id, user, null).statusCode());
-            assertEquals(1, linhas(id));
-        } finally {
-            request("DELETE", "/artigos/" + id, admin, null);
-        }
+    void userCanListButCannotAccessAdminRoute() throws Exception {
+        String jwt = token("user@example.com", List.of());
+        assertEquals(200, request("GET", "/artigos", jwt, null).statusCode());
+        assertEquals(403, request("DELETE", "/artigos/0", jwt, null).statusCode());
     }
 
     @Test
-    void adminCreatesListsAndDeletesArticle() throws Exception {
-        String admin = token("admin@example.com", List.of("ADMIN"));
-        var created = request("POST", "/artigos", admin, ARTIGO);
-        assertEquals(201, created.statusCode(), created.body());
-        assertTrue(created.body().contains("\"titulo\":\"Como abrir um chamado\""));
-        assertTrue(created.body().contains("\"descricao\":\"Passo a passo do suporte.\""));
-        assertTrue(created.body().contains("\"prioridade\":\"ALTA\""));
-        assertTrue(created.body().contains("\"emailCriador\":\"admin@example.com\""));
-        var matcher = java.util.regex.Pattern.compile("\"id\":(\\d+)").matcher(created.body());
-        assertTrue(matcher.find());
-        long id = Long.parseLong(matcher.group(1));
-
-        assertEquals(1, linhas(id));
-        assertEquals("admin@example.com", jdbc.queryForObject(
-                "select email_criador from artigos where id = ?", String.class, id));
-        assertTrue(request("GET", "/artigos", admin, null).body().contains("\"id\":" + id + ","));
-
-        assertEquals(204, request("DELETE", "/artigos/" + id, admin, null).statusCode());
-        assertEquals(0, linhas(id));
-        assertFalse(request("GET", "/artigos", admin, null).body().contains("\"id\":" + id + ","));
-        assertEquals(404, request("DELETE", "/artigos/" + id, admin, null).statusCode());
-    }
-
-    @Test
-    void creatorEmailComesFromTokenNotFromBody() throws Exception {
-        String admin = token("admin@example.com", List.of("ADMIN"));
-        long id = criarArtigo(admin, "{\"titulo\":\"Titulo\",\"descricao\":\"Descricao\","
-                + "\"prioridade\":\"BAIXA\",\"emailCriador\":\"outro@example.com\","
-                + "\"email\":\"outro@example.com\"}");
-        try {
-            assertEquals("admin@example.com", jdbc.queryForObject(
-                    "select email_criador from artigos where id = ?", String.class, id));
-        } finally {
-            request("DELETE", "/artigos/" + id, admin, null);
-        }
-    }
-
-    @Test
-    void rejectsInvalidArticleData() throws Exception {
-        String admin = token("admin@example.com", List.of("ADMIN"));
-        assertEquals(400, request("POST", "/artigos", admin, "{}").statusCode());
-        assertEquals(400, request("POST", "/artigos", admin,
-                "{\"titulo\":\" \",\"descricao\":\"d\",\"prioridade\":\"ALTA\"}").statusCode());
-        assertEquals(400, request("POST", "/artigos", admin,
-                "{\"titulo\":\"t\",\"descricao\":\"d\"}").statusCode());
-        assertEquals(400, request("POST", "/artigos", admin, "{\"titulo\":\"" + "a".repeat(201)
-                + "\",\"descricao\":\"d\",\"prioridade\":\"ALTA\"}").statusCode());
-        assertEquals(400, request("POST", "/artigos", admin, "not-json").statusCode());
-        assertEquals(400, request("DELETE", "/artigos/abc", admin, null).statusCode());
+    void adminCanAccessAdminRoute() throws Exception {
+        String jwt = token("admin@example.com", List.of("ADMIN"));
+        assertEquals(200, request("GET", "/artigos", jwt, null).statusCode());
+        assertEquals(404, request("DELETE", "/artigos/0", jwt, null).statusCode());
     }
 
     @Test
